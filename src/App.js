@@ -1,19 +1,54 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
-const STORAGE_KEY = 'window-quote-data';
+const STORAGE_KEY = 'window-quote-data-v2';
 
 const defaultConditions = [
-  { id: 'res', name: 'Résidentiel' },
-  { id: 'com', name: 'Commercial' },
+  { id: 'int_ext', name: 'Int/ext' },
+  { id: 'ext', name: 'Ext seulement' },
 ];
 
-const defaultProducts = [
-  { id: 1, name: 'Fenêtre simple', quantity: 0, prices: { res: 12, com: 10 } },
-  { id: 2, name: 'Fenêtre double', quantity: 0, prices: { res: 20, com: 16 } },
-  { id: 3, name: 'Fenêtre panoramique', quantity: 0, prices: { res: 35, com: 28 } },
-  { id: 4, name: 'Porte-patio', quantity: 0, prices: { res: 25, com: 20 } },
-  { id: 5, name: 'Lucarne / Puits de lumière', quantity: 0, prices: { res: 40, com: 32 } },
-  { id: 6, name: 'Vitrine commerciale', quantity: 0, prices: { res: 30, com: 24 } },
+const p0 = { int_ext: 0, ext: 0 };
+
+const defaultProductTypes = [
+  { id: 101, name: 'Fixe', subtypes: [
+    { id: 1, name: 'TP', quantity: 0, prices: { ...p0 } },
+    { id: 2, name: 'P',  quantity: 0, prices: { ...p0 } },
+    { id: 3, name: 'M',  quantity: 0, prices: { ...p0 } },
+    { id: 4, name: 'G',  quantity: 0, prices: { ...p0 } },
+    { id: 5, name: 'TG', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 102, name: 'Manivelle', subtypes: [
+    { id: 6, name: 'P', quantity: 0, prices: { ...p0 } },
+    { id: 7, name: 'M', quantity: 0, prices: { ...p0 } },
+    { id: 8, name: 'G', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 103, name: 'Guil. Simple', subtypes: [
+    { id: 9,  name: 'P', quantity: 0, prices: { ...p0 } },
+    { id: 10, name: 'M', quantity: 0, prices: { ...p0 } },
+    { id: 11, name: 'G', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 104, name: 'Guil. Double', subtypes: [
+    { id: 12, name: 'P', quantity: 0, prices: { ...p0 } },
+    { id: 13, name: 'M', quantity: 0, prices: { ...p0 } },
+    { id: 14, name: 'G', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 105, name: 'Coul. Simple (par vitre)', subtypes: [
+    { id: 15, name: 'P',  quantity: 0, prices: { ...p0 } },
+    { id: 16, name: 'M',  quantity: 0, prices: { ...p0 } },
+    { id: 17, name: 'G',  quantity: 0, prices: { ...p0 } },
+    { id: 18, name: 'SS', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 106, name: 'Coul. Double (par vitre)', subtypes: [
+    { id: 19, name: 'P',  quantity: 0, prices: { ...p0 } },
+    { id: 20, name: 'M',  quantity: 0, prices: { ...p0 } },
+    { id: 21, name: 'G',  quantity: 0, prices: { ...p0 } },
+    { id: 22, name: 'SS', quantity: 0, prices: { ...p0 } },
+  ]},
+  { id: 107, name: 'Porte-P.', subtypes: [
+    { id: 23, name: 'Française', quantity: 0, prices: { ...p0 } },
+    { id: 24, name: 'S',         quantity: 0, prices: { ...p0 } },
+    { id: 25, name: 'D',         quantity: 0, prices: { ...p0 } },
+  ]},
 ];
 
 const defaultAdjustments = {
@@ -36,80 +71,124 @@ function loadSaved() {
 export default function App() {
   const saved = useRef(loadSaved());
   const [tab, setTab] = useState(0);
-  const [products, setProducts] = useState(saved.current?.products || defaultProducts);
+  const [productTypes, setProductTypes] = useState(saved.current?.productTypes || defaultProductTypes);
   const [conditions, setConditions] = useState(saved.current?.conditions || defaultConditions);
   const [adjustments, setAdjustments] = useState(saved.current?.adjustments || defaultAdjustments);
-  const [newProductName, setNewProductName] = useState('');
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newSubtypeNames, setNewSubtypeNames] = useState({});
   const [newConditionName, setNewConditionName] = useState('');
-  const dragItem = useRef(null);
-  const dragOver = useRef(null);
-  const nextId = useRef(saved.current?.nextId || 7);
+  const [editingType, setEditingType] = useState(null);
+  const [editingSubtype, setEditingSubtype] = useState(null);
+  const [editingCondition, setEditingCondition] = useState(null);
+  const nextId = useRef(saved.current?.nextId || 200);
 
-  // --- Persist to localStorage ---
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ products, conditions, adjustments, nextId: nextId.current }));
-  }, [products, conditions, adjustments]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ productTypes, conditions, adjustments, nextId: nextId.current }));
+  }, [productTypes, conditions, adjustments]);
 
-  // --- Drag & Drop ---
-  const handleDragStart = (idx) => { dragItem.current = idx; };
-  const handleDragEnter = (idx) => { dragOver.current = idx; };
-  const handleDragEnd = () => {
-    if (dragItem.current === null || dragOver.current === null) return;
-    const copy = [...products];
-    const dragged = copy.splice(dragItem.current, 1)[0];
-    copy.splice(dragOver.current, 0, dragged);
-    dragItem.current = null;
-    dragOver.current = null;
-    setProducts(copy);
-  };
+  // --- Product type helpers ---
+  const updateQty = (typeId, subId, delta) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, quantity: Math.max(0, s.quantity + delta) }),
+    }));
 
-  // --- Product helpers ---
-  const updateQty = (id, delta) =>
-    setProducts((p) => p.map((x) => x.id === id ? { ...x, quantity: Math.max(0, x.quantity + delta) } : x));
-  const setQty = (id, val) =>
-    setProducts((p) => p.map((x) => x.id === id ? { ...x, quantity: Math.max(0, val) } : x));
-  const updatePrice = (id, condId, val) =>
-    setProducts((p) => p.map((x) => x.id === id ? { ...x, prices: { ...x.prices, [condId]: val } } : x));
-  const removeProduct = (id) => setProducts((p) => p.filter((x) => x.id !== id));
+  const setQty = (typeId, subId, val) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, quantity: Math.max(0, val) }),
+    }));
 
-  const addProduct = () => {
-    if (!newProductName.trim()) return;
+  const updatePrice = (typeId, subId, condId, val) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, prices: { ...s.prices, [condId]: val } }),
+    }));
+
+  const renameType = (typeId, name) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : { ...t, name }));
+
+  const renameSubtype = (typeId, subId, name) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, name }),
+    }));
+
+  const removeType = (typeId) =>
+    setProductTypes(pt => pt.filter(t => t.id !== typeId));
+
+  const removeSubtype = (typeId, subId) =>
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: t.subtypes.filter(s => s.id !== subId),
+    }));
+
+  const addType = () => {
+    if (!newTypeName.trim()) return;
     const prices = {};
-    conditions.forEach((c) => { prices[c.id] = 0; });
-    setProducts((p) => [...p, { id: nextId.current++, name: newProductName.trim(), quantity: 0, prices }]);
-    setNewProductName('');
+    conditions.forEach(c => { prices[c.id] = 0; });
+    setProductTypes(pt => [...pt, { id: nextId.current++, name: newTypeName.trim(), subtypes: [] }]);
+    setNewTypeName('');
   };
 
+  const addSubtype = (typeId) => {
+    const name = (newSubtypeNames[typeId] || '').trim();
+    if (!name) return;
+    const prices = {};
+    conditions.forEach(c => { prices[c.id] = 0; });
+    setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
+      ...t,
+      subtypes: [...t.subtypes, { id: nextId.current++, name, quantity: 0, prices }],
+    }));
+    setNewSubtypeNames(prev => ({ ...prev, [typeId]: '' }));
+  };
+
+  // --- Condition helpers ---
   const addCondition = () => {
     if (!newConditionName.trim()) return;
     const id = 'c' + Date.now();
-    setConditions((c) => [...c, { id, name: newConditionName.trim() }]);
-    setProducts((p) => p.map((x) => ({ ...x, prices: { ...x.prices, [id]: 0 } })));
+    setConditions(c => [...c, { id, name: newConditionName.trim() }]);
+    setProductTypes(pt => pt.map(t => ({
+      ...t,
+      subtypes: t.subtypes.map(s => ({ ...s, prices: { ...s.prices, [id]: 0 } })),
+    })));
     setNewConditionName('');
   };
 
   const removeCondition = (condId) => {
     if (conditions.length <= 1) return;
-    setConditions((c) => c.filter((x) => x.id !== condId));
-    setProducts((p) => p.map((x) => {
-      const np = { ...x.prices };
-      delete np[condId];
-      return { ...x, prices: np };
-    }));
+    setConditions(c => c.filter(x => x.id !== condId));
+    setProductTypes(pt => pt.map(t => ({
+      ...t,
+      subtypes: t.subtypes.map(s => {
+        const np = { ...s.prices };
+        delete np[condId];
+        return { ...s, prices: np };
+      }),
+    })));
   };
 
   const renameCondition = (condId, name) =>
-    setConditions((c) => c.map((x) => x.id === condId ? { ...x, name } : x));
+    setConditions(c => c.map(x => x.id === condId ? { ...x, name } : x));
+
+  const resetQuantities = () =>
+    setProductTypes(pt => pt.map(t => ({
+      ...t,
+      subtypes: t.subtypes.map(s => ({ ...s, quantity: 0 })),
+    })));
 
   // --- Calculations ---
   const calcForCondition = useCallback((condId) => {
-    const lines = products.filter((p) => p.quantity > 0).map((p) => ({
-      name: p.name,
-      qty: p.quantity,
-      unit: p.prices[condId] || 0,
-      total: p.quantity * (p.prices[condId] || 0),
-    }));
-    const subtotal = lines.reduce((s, l) => s + l.total, 0);
+    const lines = [];
+    productTypes.forEach(t => {
+      t.subtypes.forEach(sub => {
+        if (sub.quantity > 0) {
+          const unit = sub.prices[condId] || 0;
+          lines.push({ name: `${t.name} — ${sub.name}`, qty: sub.quantity, unit, total: sub.quantity * unit });
+        }
+      });
+    });
+    const subtotal = lines.reduce((sum, l) => sum + l.total, 0);
     const disc = adjustments.discountType === '%'
       ? subtotal * (adjustments.discountValue / 100)
       : Number(adjustments.discountValue) || 0;
@@ -122,7 +201,7 @@ export default function App() {
     const tvq = beforeTax * 0.09975;
     const grand = beforeTax + tps + tvq;
     return { lines, subtotal, disc, afterDiscount, transport, commission, custom, beforeTax, tps, tvq, grand };
-  }, [products, adjustments]);
+  }, [productTypes, adjustments]);
 
   const fmt = (v) => v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' $';
 
@@ -137,7 +216,7 @@ export default function App() {
       color: active ? '#7dd3fc' : '#999', border: 'none', borderBottom: active ? '2px solid #7dd3fc' : '2px solid transparent',
       fontSize: 14, fontWeight: active ? 600 : 400, transition: 'all .15s',
     }),
-    body: { maxWidth: 800, margin: '0 auto', padding: '24px 16px' },
+    body: { maxWidth: 820, margin: '0 auto', padding: '24px 16px' },
     card: { background: '#1e1e2e', borderRadius: 10, padding: '16px 20px', marginBottom: 12, border: '1px solid #2a2a3e' },
     row: { display: 'flex', alignItems: 'center', gap: 12 },
     btn: (color = '#7dd3fc') => ({
@@ -146,30 +225,26 @@ export default function App() {
     }),
     btnFill: (color = '#7dd3fc') => ({
       background: color, border: 'none', color: '#121212', borderRadius: 8,
-      padding: '10px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+      padding: '8px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
     }),
     input: { background: '#2a2a3e', border: '1px solid #444', borderRadius: 6, padding: '8px 12px', color: '#e0e0e0', fontSize: 14, width: '100%', boxSizing: 'border-box' },
-    inputSm: { background: '#2a2a3e', border: '1px solid #444', borderRadius: 6, padding: '6px 8px', color: '#e0e0e0', fontSize: 14, width: 80, textAlign: 'right', MozAppearance: 'textfield' },
+    inputSm: { background: '#2a2a3e', border: '1px solid #444', borderRadius: 6, padding: '6px 8px', color: '#e0e0e0', fontSize: 14, width: 80, textAlign: 'right' },
     label: { fontSize: 12, color: '#888', marginBottom: 4 },
-    grip: { cursor: 'grab', color: '#555', fontSize: 18, userSelect: 'none', padding: '0 4px' },
     del: { background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 18, padding: '2px 6px' },
     divider: { borderTop: '1px solid #333', margin: '16px 0' },
-    condTag: (active) => ({
+    condTag: () => ({
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 20,
-      background: active ? '#7dd3fc22' : '#2a2a3e', border: `1px solid ${active ? '#7dd3fc' : '#444'}`,
-      color: active ? '#7dd3fc' : '#ccc', cursor: 'pointer', fontSize: 13,
+      background: '#7dd3fc22', border: '1px solid #7dd3fc',
+      color: '#7dd3fc', fontSize: 13,
     }),
   };
-
-  const resetQuantities = () =>
-    setProducts((p) => p.map((x) => ({ ...x, quantity: 0 })));
 
   // ===================== TAB 1: PRODUITS =====================
   const renderProduits = () => (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <p style={{ color: '#888', fontSize: 13, margin: 0 }}>
-          Sélectionnez les quantités. Glissez ⠿ pour réordonner.
+          Cliquez sur un nom pour le modifier. Ajustez les quantités.
         </p>
         <button
           style={{ ...s.btn('#f87171'), fontSize: 13, padding: '6px 14px', whiteSpace: 'nowrap' }}
@@ -178,61 +253,105 @@ export default function App() {
           Réinitialiser quantités
         </button>
       </div>
-      {products.map((p, idx) => (
-        <div
-          key={p.id}
-          draggable
-          onDragStart={() => handleDragStart(idx)}
-          onDragEnter={() => handleDragEnter(idx)}
-          onDragEnd={handleDragEnd}
-          onDragOver={(e) => e.preventDefault()}
-          style={{ ...s.card, ...s.row, justifyContent: 'space-between' }}
-        >
-          <div style={{ ...s.row, flex: 1 }}>
-            <span style={s.grip}>⠿</span>
-            <span style={{ fontSize: 15 }}>{p.name}</span>
+
+      {productTypes.map(t => (
+        <div key={t.id} style={s.card}>
+          {/* Type header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #333' }}>
+            {editingType === t.id ? (
+              <input
+                autoFocus
+                style={{ ...s.inputSm, width: 220, textAlign: 'left', fontSize: 15, fontWeight: 600, padding: '4px 8px' }}
+                value={t.name}
+                onChange={(e) => renameType(t.id, e.target.value)}
+                onBlur={() => setEditingType(null)}
+                onKeyDown={(e) => e.key === 'Enter' && setEditingType(null)}
+              />
+            ) : (
+              <span
+                style={{ fontSize: 15, fontWeight: 600, color: '#a78bfa', cursor: 'text' }}
+                onClick={() => setEditingType(t.id)}
+              >{t.name}</span>
+            )}
+            <button onClick={() => removeType(t.id)} style={s.del} title="Supprimer ce type">🗑</button>
           </div>
-          <div style={{ ...s.row, gap: 8 }}>
-            <button style={s.btn()} onClick={() => updateQty(p.id, -1)}>−</button>
+
+          {/* Subtypes */}
+          {t.subtypes.map(sub => (
+            <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0 5px 12px', borderBottom: '1px solid #1a1a2a' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingSubtype === sub.id ? (
+                  <input
+                    autoFocus
+                    style={{ ...s.inputSm, width: 140, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
+                    value={sub.name}
+                    onChange={(e) => renameSubtype(t.id, sub.id, e.target.value)}
+                    onBlur={() => setEditingSubtype(null)}
+                    onKeyDown={(e) => e.key === 'Enter' && setEditingSubtype(null)}
+                  />
+                ) : (
+                  <span
+                    style={{ fontSize: 14, color: '#ccc', cursor: 'text' }}
+                    onClick={() => setEditingSubtype(sub.id)}
+                  >{sub.name}</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, -1)}>−</button>
+                <input
+                  type="number"
+                  min="0"
+                  value={sub.quantity}
+                  onChange={(e) => setQty(t.id, sub.id, parseInt(e.target.value) || 0)}
+                  style={{ ...s.inputSm, width: 56, textAlign: 'center' }}
+                />
+                <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, 1)}>+</button>
+                <button onClick={() => removeSubtype(t.id, sub.id)} style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}>✕</button>
+              </div>
+            </div>
+          ))}
+
+          {/* Add subtype */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingLeft: 12 }}>
             <input
-              type="number"
-              min="0"
-              value={p.quantity}
-              onChange={(e) => setQty(p.id, parseInt(e.target.value) || 0)}
-              style={{ ...s.inputSm, width: 56, textAlign: 'center', MozAppearance: 'textfield', WebkitAppearance: 'none' }}
+              style={{ ...s.input, fontSize: 13, padding: '6px 10px' }}
+              placeholder="Nouveau sous-type (ex: XL)..."
+              value={newSubtypeNames[t.id] || ''}
+              onChange={(e) => setNewSubtypeNames(prev => ({ ...prev, [t.id]: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && addSubtype(t.id)}
             />
-            <button style={s.btn()} onClick={() => updateQty(p.id, 1)}>+</button>
+            <button style={s.btnFill('#a78bfa')} onClick={() => addSubtype(t.id)}>+ Sous-type</button>
           </div>
         </div>
       ))}
-      <div style={{ ...s.card, ...s.row, gap: 8 }}>
+
+      {/* Add type */}
+      <div style={{ ...s.card, display: 'flex', gap: 8 }}>
         <input
           style={{ ...s.input, flex: 1 }}
-          placeholder="Nouveau produit..."
-          value={newProductName}
-          onChange={(e) => setNewProductName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addProduct()}
+          placeholder="Nouveau type de fenêtre (ex: Fixe)..."
+          value={newTypeName}
+          onChange={(e) => setNewTypeName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addType()}
         />
-        <button style={s.btnFill()} onClick={addProduct}>+ Ajouter</button>
+        <button style={s.btnFill()} onClick={addType}>+ Type</button>
       </div>
     </div>
   );
 
   // ===================== TAB 2: PRIX & AJUSTEMENTS =====================
-  const [editingCondition, setEditingCondition] = useState(null);
-
   const renderPrix = () => (
     <div>
       {/* Conditions */}
-      <div style={{ ...s.card }}>
+      <div style={s.card}>
         <div style={{ ...s.label, marginBottom: 10 }}>CONDITIONS DE PRIX</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {conditions.map((c) => (
-            <div key={c.id} style={s.condTag(true)}>
+          {conditions.map(c => (
+            <div key={c.id} style={s.condTag()}>
               {editingCondition === c.id ? (
                 <input
                   autoFocus
-                  style={{ ...s.inputSm, width: 120, textAlign: 'left', padding: '2px 6px', fontSize: 13 }}
+                  style={{ ...s.inputSm, width: 140, textAlign: 'left', padding: '2px 6px', fontSize: 13 }}
                   value={c.name}
                   onChange={(e) => renameCondition(c.id, e.target.value)}
                   onBlur={() => setEditingCondition(null)}
@@ -247,10 +366,10 @@ export default function App() {
             </div>
           ))}
         </div>
-        <div style={{ ...s.row, gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
             style={{ ...s.input, flex: 1 }}
-            placeholder="Nouvelle condition (ex: Extérieur seulement)..."
+            placeholder="Nouvelle condition (ex: Int/ext)..."
             value={newConditionName}
             onChange={(e) => setNewConditionName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addCondition()}
@@ -259,43 +378,45 @@ export default function App() {
         </div>
       </div>
 
-      {/* Price table */}
-      <div style={{ ...s.card, overflowX: 'auto' }}>
-        <div style={{ ...s.label, marginBottom: 10 }}>PRIX UNITAIRES PAR CONDITION</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '1px solid #333', color: '#888', fontSize: 12 }}>Produit</th>
-              {conditions.map((c) => (
-                <th key={c.id} style={{ textAlign: 'right', padding: '8px 12px', borderBottom: '1px solid #333', color: '#a78bfa', fontSize: 12 }}>{c.name}</th>
-              ))}
-              <th style={{ width: 40 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p) => (
-              <tr key={p.id}>
-                <td style={{ padding: '8px 12px', borderBottom: '1px solid #222', fontSize: 14 }}>{p.name}</td>
-                {conditions.map((c) => (
-                  <td key={c.id} style={{ padding: '6px 8px', borderBottom: '1px solid #222', textAlign: 'right' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={p.prices[c.id] ?? 0}
-                      onChange={(e) => updatePrice(p.id, c.id, parseFloat(e.target.value) || 0)}
-                      style={{ ...s.inputSm, width: 80 }}
-                    />
-                  </td>
+      {/* Price table per type */}
+      {productTypes.map(t => (
+        <div key={t.id} style={{ ...s.card, overflowX: 'auto', marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, color: '#a78bfa', fontSize: 14, marginBottom: 10 }}>{t.name}</div>
+          {t.subtypes.length === 0 ? (
+            <div style={{ color: '#555', fontSize: 13 }}>Aucun sous-type.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid #333', color: '#888', fontSize: 12 }}>Sous-type</th>
+                  {conditions.map(c => (
+                    <th key={c.id} style={{ textAlign: 'right', padding: '6px 10px', borderBottom: '1px solid #333', color: '#7dd3fc', fontSize: 12 }}>{c.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {t.subtypes.map(sub => (
+                  <tr key={sub.id}>
+                    <td style={{ padding: '6px 10px', borderBottom: '1px solid #222', fontSize: 14 }}>{sub.name}</td>
+                    {conditions.map(c => (
+                      <td key={c.id} style={{ padding: '4px 6px', borderBottom: '1px solid #222', textAlign: 'right' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={sub.prices[c.id] ?? 0}
+                          onChange={(e) => updatePrice(t.id, sub.id, c.id, parseFloat(e.target.value) || 0)}
+                          style={{ ...s.inputSm, width: 80 }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-                <td style={{ borderBottom: '1px solid #222', textAlign: 'center' }}>
-                  <button onClick={() => removeProduct(p.id)} style={s.del} title="Supprimer">🗑</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
 
       {/* Adjustments */}
       <div style={s.card}>
@@ -303,7 +424,7 @@ export default function App() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
             <div style={s.label}>Rabais</div>
-            <div style={{ ...s.row, gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
                 type="number" min="0" step="0.01"
                 value={adjustments.discountValue}
@@ -360,7 +481,7 @@ export default function App() {
 
   // ===================== TAB 3: SOUMISSION =====================
   const renderSoumission = () => {
-    const hasItems = products.some((p) => p.quantity > 0);
+    const hasItems = productTypes.some(t => t.subtypes.some(s => s.quantity > 0));
     if (!hasItems) {
       return (
         <div style={{ ...s.card, textAlign: 'center', padding: 40, color: '#666' }}>
@@ -371,7 +492,7 @@ export default function App() {
 
     return (
       <div>
-        {conditions.map((cond) => {
+        {conditions.map(cond => {
           const c = calcForCondition(cond.id);
           return (
             <div key={cond.id} style={{ ...s.card, marginBottom: 20 }}>
@@ -379,7 +500,6 @@ export default function App() {
                 {cond.name}
               </h3>
 
-              {/* Line items */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #333' }}>
@@ -403,7 +523,6 @@ export default function App() {
 
               <div style={s.divider} />
 
-              {/* Totals */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 20px', fontSize: 14 }}>
                 <span>Sous-total</span>
                 <span style={{ textAlign: 'right' }}>{fmt(c.subtotal)}</span>
