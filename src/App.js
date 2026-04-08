@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 
-// ── Storage keys ──────────────────────────────────────────────────────────────
+// ── Storage keys (never change these) ─────────────────────────────────────────
 const STORAGE_KEY     = 'window-quote-data-v2';
 const INV_STORAGE_KEY = 'window-quote-inventory';
 
@@ -62,13 +62,13 @@ const defaultAdjustments = {
 
 // ── Inventory defaults ─────────────────────────────────────────────────────────
 const defaultInventoryGroups = [
-  { id: 1, name: 'Camion',    items: [] },
-  { id: 2, name: 'Entrepôt',  items: [] },
+  { id: 1, name: 'Camion',   items: [] },
+  { id: 2, name: 'Entrepôt', items: [] },
 ];
 
 // ── Load helpers ───────────────────────────────────────────────────────────────
 function loadSaved() {
-  try { const r = localStorage.getItem(STORAGE_KEY);   if (r) return JSON.parse(r); } catch {}
+  try { const r = localStorage.getItem(STORAGE_KEY);     if (r) return JSON.parse(r); } catch {}
   return null;
 }
 function loadInv() {
@@ -76,37 +76,44 @@ function loadInv() {
   return null;
 }
 
+const sel = (e) => e.target.select();
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const saved    = useRef(loadSaved());
   const savedInv = useRef(loadInv());
 
   // ── Quote state ──
-  const [tab, setTab]               = useState(0);
+  const [tab, setTab]                   = useState(0);
   const [productTypes, setProductTypes] = useState(saved.current?.productTypes || defaultProductTypes);
-  const [conditions, setConditions]     = useState(saved.current?.conditions   || defaultConditions);
-  const [adjustments, setAdjustments]   = useState(saved.current?.adjustments  || defaultAdjustments);
+  const [conditions,   setConditions]   = useState(saved.current?.conditions   || defaultConditions);
+  const [adjustments,  setAdjustments]  = useState(saved.current?.adjustments  || defaultAdjustments);
   const nextId = useRef(saved.current?.nextId || 200);
 
   // ── Inventory state ──
-  const [invGroups, setInvGroups]       = useState(savedInv.current?.groups  || defaultInventoryGroups);
+  const [invGroups, setInvGroups] = useState(savedInv.current?.groups || defaultInventoryGroups);
   const invNextId = useRef(savedInv.current?.nextId || 1);
 
   // ── UI state ──
-  const [newTypeName, setNewTypeName]         = useState('');
-  const [newSubtypeNames, setNewSubtypeNames] = useState({});
+  const [newTypeName,      setNewTypeName]      = useState('');
+  const [newSubtypeNames,  setNewSubtypeNames]  = useState({});
   const [newConditionName, setNewConditionName] = useState('');
-  const [editingType, setEditingType]         = useState(null);
-  const [editingSubtype, setEditingSubtype]   = useState(null);
+  const [editingType,      setEditingType]      = useState(null);
+  const [editingSubtype,   setEditingSubtype]   = useState(null);
   const [editingCondition, setEditingCondition] = useState(null);
+  const [collapsedTypes,   setCollapsedTypes]   = useState({});
 
-  // inventory UI
-  const [newGroupName, setNewGroupName]       = useState('');
-  const [newItemNames, setNewItemNames]       = useState({});
-  const [editingGroup, setEditingGroup]       = useState(null);
-  const [editingItem, setEditingItem]         = useState(null);
-  const [transfer, setTransfer]               = useState(null);
-  // transfer = { groupId, itemId, toGroupId: null, qty: 1 }
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newItemNames, setNewItemNames] = useState({});
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [editingItem,  setEditingItem]  = useState(null);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [transfer, setTransfer] = useState(null);
+  // transfer = { groupId, itemId, toGroupId: null, qty: '' }
+
+  // ── Inventory drag & drop ──
+  const invDragItem = useRef(null); // { groupId, idx }
+  const invDragOver = useRef(null); // { groupId, idx }
 
   // ── Persist ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -124,18 +131,18 @@ export default function App() {
     }));
   const setQty = (typeId, subId, val) =>
     setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
-      ...t, subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, quantity: Math.max(0, val) }),
+      ...t, subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, quantity: Math.max(0, isNaN(val) ? 0 : val) }),
     }));
   const updatePrice = (typeId, subId, condId, val) =>
     setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
-      ...t, subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, prices: { ...s.prices, [condId]: val } }),
+      ...t, subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, prices: { ...s.prices, [condId]: isNaN(val) ? 0 : val } }),
     }));
   const renameType    = (typeId, name) => setProductTypes(pt => pt.map(t => t.id !== typeId ? t : { ...t, name }));
   const renameSubtype = (typeId, subId, name) =>
     setProductTypes(pt => pt.map(t => t.id !== typeId ? t : {
       ...t, subtypes: t.subtypes.map(s => s.id !== subId ? s : { ...s, name }),
     }));
-  const removeType    = (typeId) => setProductTypes(pt => pt.filter(t => t.id !== typeId));
+  const removeType = (typeId) => setProductTypes(pt => pt.filter(t => t.id !== typeId));
   const removeSubtype = (typeId, subId) =>
     setProductTypes(pt => pt.map(t => t.id !== typeId ? t : { ...t, subtypes: t.subtypes.filter(s => s.id !== subId) }));
   const addType = () => {
@@ -170,14 +177,17 @@ export default function App() {
   const renameCondition = (condId, name) => setConditions(c => c.map(x => x.id === condId ? { ...x, name } : x));
   const resetQuantities = () => setProductTypes(pt => pt.map(t => ({ ...t, subtypes: t.subtypes.map(s => ({ ...s, quantity: 0 })) })));
 
+  const toggleCollapseType  = (id) => setCollapsedTypes(p  => ({ ...p, [id]: !p[id] }));
+  const toggleCollapseGroup = (id) => setCollapsedGroups(p => ({ ...p, [id]: !p[id] }));
+
   // ── Inventory helpers ─────────────────────────────────────────────────────
   const addGroup = () => {
     if (!newGroupName.trim()) return;
     setInvGroups(gs => [...gs, { id: invNextId.current++, name: newGroupName.trim(), items: [] }]);
     setNewGroupName('');
   };
-  const removeGroup   = (gid) => setInvGroups(gs => gs.filter(g => g.id !== gid));
-  const renameGroup   = (gid, name) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, name }));
+  const removeGroup  = (gid) => setInvGroups(gs => gs.filter(g => g.id !== gid));
+  const renameGroup  = (gid, name) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, name }));
   const addItem = (gid) => {
     const name = (newItemNames[gid] || '').trim();
     if (!name) return;
@@ -186,24 +196,44 @@ export default function App() {
     }));
     setNewItemNames(prev => ({ ...prev, [gid]: '' }));
   };
-  const removeItem    = (gid, iid) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, items: g.items.filter(i => i.id !== iid) }));
-  const renameItem    = (gid, iid, name) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, items: g.items.map(i => i.id !== iid ? i : { ...i, name }) }));
-  const updateInvQty  = (gid, iid, delta) =>
+  const removeItem   = (gid, iid) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, items: g.items.filter(i => i.id !== iid) }));
+  const renameItem   = (gid, iid, name) => setInvGroups(gs => gs.map(g => g.id !== gid ? g : { ...g, items: g.items.map(i => i.id !== iid ? i : { ...i, name }) }));
+  const updateInvQty = (gid, iid, delta) =>
     setInvGroups(gs => gs.map(g => g.id !== gid ? g : {
       ...g, items: g.items.map(i => i.id !== iid ? i : { ...i, quantity: Math.max(0, i.quantity + delta) }),
     }));
-  const setInvQty     = (gid, iid, val) =>
+  const setInvQty = (gid, iid, val) =>
     setInvGroups(gs => gs.map(g => g.id !== gid ? g : {
-      ...g, items: g.items.map(i => i.id !== iid ? i : { ...i, quantity: Math.max(0, val) }),
+      ...g, items: g.items.map(i => i.id !== iid ? i : { ...i, quantity: Math.max(0, isNaN(val) ? 0 : val) }),
     }));
 
+  // ── Inventory drag & drop ─────────────────────────────────────────────────
+  const handleInvDragStart = (groupId, idx) => { invDragItem.current = { groupId, idx }; };
+  const handleInvDragEnter = (groupId, idx) => { invDragOver.current = { groupId, idx }; };
+  const handleInvDragEnd   = () => {
+    const from = invDragItem.current;
+    const to   = invDragOver.current;
+    invDragItem.current = null;
+    invDragOver.current = null;
+    if (!from || !to || from.groupId !== to.groupId || from.idx === to.idx) return;
+    setInvGroups(gs => gs.map(g => {
+      if (g.id !== from.groupId) return g;
+      const items = [...g.items];
+      const [dragged] = items.splice(from.idx, 1);
+      items.splice(to.idx, 0, dragged);
+      return { ...g, items };
+    }));
+  };
+
+  // ── Transfer ──────────────────────────────────────────────────────────────
   const doTransfer = () => {
     if (!transfer || !transfer.toGroupId) return;
     const { groupId, itemId, toGroupId, qty } = transfer;
     const srcGroup = invGroups.find(g => g.id === groupId);
     const srcItem  = srcGroup?.items.find(i => i.id === itemId);
     if (!srcItem) return;
-    const actual = Math.min(Math.max(1, qty), srcItem.quantity);
+    const parsed = parseInt(qty);
+    const actual = Math.min(Math.max(1, isNaN(parsed) ? 1 : parsed), srcItem.quantity);
 
     setInvGroups(gs => gs.map(g => {
       if (g.id === groupId) {
@@ -214,9 +244,7 @@ export default function App() {
       }
       if (g.id === toGroupId) {
         const existing = g.items.find(i => i.name === srcItem.name);
-        if (existing) {
-          return { ...g, items: g.items.map(i => i.id === existing.id ? { ...i, quantity: i.quantity + actual } : i) };
-        }
+        if (existing) return { ...g, items: g.items.map(i => i.id === existing.id ? { ...i, quantity: i.quantity + actual } : i) };
         return { ...g, items: [...g.items, { id: invNextId.current++, name: srcItem.name, quantity: actual }] };
       }
       return g;
@@ -236,12 +264,12 @@ export default function App() {
     const subtotal    = lines.reduce((sum, l) => sum + l.total, 0);
     const disc        = adjustments.discountType === '%' ? subtotal * (adjustments.discountValue / 100) : Number(adjustments.discountValue) || 0;
     const afterDiscount = subtotal - disc;
-    const transport   = Number(adjustments.transport)    || 0;
-    const commission  = Number(adjustments.commission)   || 0;
-    const custom      = Number(adjustments.customValue)  || 0;
+    const transport   = Number(adjustments.transport)   || 0;
+    const commission  = Number(adjustments.commission)  || 0;
+    const custom      = Number(adjustments.customValue) || 0;
     const beforeTax   = afterDiscount + transport + commission + custom;
-    const tps  = beforeTax * 0.05;
-    const tvq  = beforeTax * 0.09975;
+    const tps   = beforeTax * 0.05;
+    const tvq   = beforeTax * 0.09975;
     const grand = beforeTax + tps + tvq;
     return { lines, subtotal, disc, afterDiscount, transport, commission, custom, beforeTax, tps, tvq, grand };
   }, [productTypes, adjustments]);
@@ -251,8 +279,8 @@ export default function App() {
   // ── Styles ────────────────────────────────────────────────────────────────
   const s = {
     app:    { minHeight: '100vh', background: '#121212', color: '#e0e0e0', fontFamily: "'Segoe UI', system-ui, sans-serif", padding: '0 0 40px' },
-    header: { background: '#1e1e2e', padding: '20px 24px 0', borderBottom: '1px solid #333' },
-    title:  { margin: '0 0 16px', fontSize: 22, fontWeight: 600, color: '#7dd3fc' },
+    header: { background: '#1e1e2e', padding: '16px 24px 0', borderBottom: '1px solid #333' },
+    logoRow:{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 },
     tabs:   { display: 'flex', gap: 0, overflowX: 'auto' },
     tab: (active) => ({
       padding: '10px 20px', cursor: 'pointer', background: active ? '#2a2a3e' : 'transparent',
@@ -283,6 +311,12 @@ export default function App() {
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 20,
       background: '#7dd3fc22', border: '1px solid #7dd3fc', color: '#7dd3fc', fontSize: 13,
     }),
+    grip:    { cursor: 'grab', color: '#555', fontSize: 18, userSelect: 'none', padding: '0 6px', touchAction: 'none' },
+    chevron: (collapsed) => ({
+      background: 'none', border: 'none', color: '#666', cursor: 'pointer',
+      fontSize: 16, padding: '2px 8px 2px 0', lineHeight: 1, transition: 'transform .2s',
+      transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+    }),
   };
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -297,50 +331,69 @@ export default function App() {
         </button>
       </div>
 
-      {productTypes.map(t => (
-        <div key={t.id} style={s.card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #333' }}>
-            {editingType === t.id ? (
-              <input autoFocus style={{ ...s.inputSm, width: 220, textAlign: 'left', fontSize: 15, fontWeight: 600, padding: '4px 8px' }}
-                value={t.name} onChange={e => renameType(t.id, e.target.value)}
-                onBlur={() => setEditingType(null)} onKeyDown={e => e.key === 'Enter' && setEditingType(null)} />
-            ) : (
-              <span style={{ fontSize: 15, fontWeight: 600, color: '#a78bfa', cursor: 'text' }} onClick={() => setEditingType(t.id)}>{t.name}</span>
-            )}
-            <button onClick={() => removeType(t.id)} style={s.del} title="Supprimer">🗑</button>
-          </div>
-
-          {t.subtypes.map(sub => (
-            <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0 5px 12px', borderBottom: '1px solid #1a1a2a' }}>
-              <div style={{ flex: 1 }}>
-                {editingSubtype === sub.id ? (
-                  <input autoFocus style={{ ...s.inputSm, width: 140, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
-                    value={sub.name} onChange={e => renameSubtype(t.id, sub.id, e.target.value)}
-                    onBlur={() => setEditingSubtype(null)} onKeyDown={e => e.key === 'Enter' && setEditingSubtype(null)} />
-                ) : (
-                  <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingSubtype(sub.id)}>{sub.name}</span>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, -1)}>−</button>
-                <input type="number" min="0" value={sub.quantity}
-                  onChange={e => setQty(t.id, sub.id, parseInt(e.target.value) || 0)}
-                  style={{ ...s.inputSm, width: 56, textAlign: 'center' }} />
-                <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, 1)}>+</button>
-                <button onClick={() => removeSubtype(t.id, sub.id)} style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}>✕</button>
-              </div>
+      {productTypes.map(t => {
+        const collapsed = !!collapsedTypes[t.id];
+        return (
+          <div key={t.id} style={s.card}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: collapsed ? 0 : 8, paddingBottom: collapsed ? 0 : 8, borderBottom: collapsed ? 'none' : '1px solid #333' }}>
+              {/* Collapse arrow */}
+              <button style={s.chevron(collapsed)} onClick={() => toggleCollapseType(t.id)} title={collapsed ? 'Déplier' : 'Replier'}>▼</button>
+              {/* Type name */}
+              {editingType === t.id ? (
+                <input autoFocus style={{ ...s.inputSm, flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, padding: '4px 8px' }}
+                  value={t.name} onChange={e => renameType(t.id, e.target.value)}
+                  onBlur={() => setEditingType(null)} onKeyDown={e => e.key === 'Enter' && setEditingType(null)} />
+              ) : (
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#a78bfa', cursor: 'text', flex: 1 }} onClick={() => setEditingType(t.id)}>{t.name}</span>
+              )}
+              {/* Delete */}
+              <button
+                style={s.del}
+                title="Supprimer ce type"
+                onClick={() => { if (window.confirm(`Supprimer le type "${t.name}" et tous ses sous-types ?`)) removeType(t.id); }}
+              >🗑</button>
             </div>
-          ))}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingLeft: 12 }}>
-            <input style={{ ...s.input, fontSize: 13, padding: '6px 10px' }} placeholder="Nouveau sous-type..."
-              value={newSubtypeNames[t.id] || ''}
-              onChange={e => setNewSubtypeNames(prev => ({ ...prev, [t.id]: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && addSubtype(t.id)} />
-            <button style={s.btnFill('#a78bfa')} onClick={() => addSubtype(t.id)}>+ Sous-type</button>
+            {!collapsed && (
+              <>
+                {t.subtypes.map(sub => (
+                  <div key={sub.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0 5px 12px', borderBottom: '1px solid #1a1a2a' }}>
+                    <div style={{ flex: 1 }}>
+                      {editingSubtype === sub.id ? (
+                        <input autoFocus style={{ ...s.inputSm, width: 140, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
+                          value={sub.name} onChange={e => renameSubtype(t.id, sub.id, e.target.value)}
+                          onBlur={() => setEditingSubtype(null)} onKeyDown={e => e.key === 'Enter' && setEditingSubtype(null)} />
+                      ) : (
+                        <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingSubtype(sub.id)}>{sub.name}</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, -1)}>−</button>
+                      <input type="number" min="0" value={sub.quantity}
+                        onFocus={sel}
+                        onChange={e => setQty(t.id, sub.id, parseInt(e.target.value))}
+                        style={{ ...s.inputSm, width: 56, textAlign: 'center' }} />
+                      <button style={s.btn()} onClick={() => updateQty(t.id, sub.id, 1)}>+</button>
+                      <button
+                        style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}
+                        onClick={() => { if (window.confirm(`Supprimer "${sub.name}" ?`)) removeSubtype(t.id, sub.id); }}
+                      >✕</button>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingLeft: 12 }}>
+                  <input style={{ ...s.input, fontSize: 13, padding: '6px 10px' }} placeholder="Nouveau sous-type..."
+                    value={newSubtypeNames[t.id] || ''}
+                    onChange={e => setNewSubtypeNames(prev => ({ ...prev, [t.id]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && addSubtype(t.id)} />
+                  <button style={s.btnFill('#a78bfa')} onClick={() => addSubtype(t.id)}>+ Sous-type</button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div style={{ ...s.card, display: 'flex', gap: 8 }}>
         <input style={{ ...s.input, flex: 1 }} placeholder="Nouveau type de fenêtre..."
@@ -369,7 +422,10 @@ export default function App() {
                 <span onClick={() => setEditingCondition(c.id)} style={{ cursor: 'text' }}>{c.name}</span>
               )}
               {conditions.length > 1 && (
-                <button onClick={() => removeCondition(c.id)} style={{ ...s.del, fontSize: 14, padding: 0 }}>✕</button>
+                <button
+                  onClick={() => { if (window.confirm(`Supprimer la condition "${c.name}" ?`)) removeCondition(c.id); }}
+                  style={{ ...s.del, fontSize: 14, padding: 0 }}
+                >✕</button>
               )}
             </div>
           ))}
@@ -391,7 +447,7 @@ export default function App() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid #333', color: '#888', fontSize: 12 }}>Sous-type</th>
+                  <th style={{ textAlign: 'left',  padding: '6px 10px', borderBottom: '1px solid #333', color: '#888', fontSize: 12 }}>Sous-type</th>
                   {conditions.map(c => (
                     <th key={c.id} style={{ textAlign: 'right', padding: '6px 10px', borderBottom: '1px solid #333', color: '#7dd3fc', fontSize: 12 }}>{c.name}</th>
                   ))}
@@ -404,7 +460,8 @@ export default function App() {
                     {conditions.map(c => (
                       <td key={c.id} style={{ padding: '4px 6px', borderBottom: '1px solid #222', textAlign: 'right' }}>
                         <input type="number" min="0" step="0.01" value={sub.prices[c.id] ?? 0}
-                          onChange={e => updatePrice(t.id, sub.id, c.id, parseFloat(e.target.value) || 0)}
+                          onFocus={sel}
+                          onChange={e => updatePrice(t.id, sub.id, c.id, parseFloat(e.target.value))}
                           style={{ ...s.inputSm, width: 80 }} />
                       </td>
                     ))}
@@ -423,6 +480,7 @@ export default function App() {
             <div style={s.label}>Rabais</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="number" min="0" step="0.01" value={adjustments.discountValue}
+                onFocus={sel}
                 onChange={e => setAdjustments({ ...adjustments, discountValue: parseFloat(e.target.value) || 0 })}
                 style={{ ...s.inputSm, flex: 1 }} />
               <select value={adjustments.discountType}
@@ -436,12 +494,14 @@ export default function App() {
           <div>
             <div style={s.label}>Transport ($)</div>
             <input type="number" min="0" step="0.01" value={adjustments.transport}
+              onFocus={sel}
               onChange={e => setAdjustments({ ...adjustments, transport: parseFloat(e.target.value) || 0 })}
               style={s.inputSm} />
           </div>
           <div>
             <div style={s.label}>Commission ($)</div>
             <input type="number" min="0" step="0.01" value={adjustments.commission}
+              onFocus={sel}
               onChange={e => setAdjustments({ ...adjustments, commission: parseFloat(e.target.value) || 0 })}
               style={s.inputSm} />
           </div>
@@ -451,6 +511,7 @@ export default function App() {
                 style={{ ...s.input, padding: '2px 6px', fontSize: 12, width: 140, marginBottom: 4 }} /> ($)
             </div>
             <input type="number" step="0.01" value={adjustments.customValue}
+              onFocus={sel}
               onChange={e => setAdjustments({ ...adjustments, customValue: parseFloat(e.target.value) || 0 })}
               style={s.inputSm} />
           </div>
@@ -503,16 +564,16 @@ export default function App() {
                   <span style={{ color: '#f87171' }}>Rabais ({adjustments.discountType === '%' ? `${adjustments.discountValue}%` : fmt(adjustments.discountValue)})</span>
                   <span style={{ textAlign: 'right', color: '#f87171' }}>− {fmt(c.disc)}</span>
                 </>}
-                {c.transport > 0 && <><span>Transport</span><span style={{ textAlign: 'right' }}>{fmt(c.transport)}</span></>}
+                {c.transport > 0  && <><span>Transport</span> <span style={{ textAlign: 'right' }}>{fmt(c.transport)}</span></>}
                 {c.commission > 0 && <><span>Commission</span><span style={{ textAlign: 'right' }}>{fmt(c.commission)}</span></>}
-                {c.custom !== 0 && <>
+                {c.custom !== 0   && <>
                   <span>{adjustments.customName || 'Ajustement'}</span>
                   <span style={{ textAlign: 'right' }}>{c.custom < 0 ? '− ' + fmt(Math.abs(c.custom)) : fmt(c.custom)}</span>
                 </>}
                 <div style={{ gridColumn: '1 / -1', ...s.divider, margin: '4px 0' }} />
                 <span>Total avant taxes</span><span style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(c.beforeTax)}</span>
-                <span style={{ color: '#888' }}>TPS (5%)</span><span style={{ textAlign: 'right', color: '#888' }}>{fmt(c.tps)}</span>
-                <span style={{ color: '#888' }}>TVQ (9,975%)</span><span style={{ textAlign: 'right', color: '#888' }}>{fmt(c.tvq)}</span>
+                <span style={{ color: '#888' }}>TPS (5%)</span>          <span style={{ textAlign: 'right', color: '#888' }}>{fmt(c.tps)}</span>
+                <span style={{ color: '#888' }}>TVQ (9,975%)</span>       <span style={{ textAlign: 'right', color: '#888' }}>{fmt(c.tvq)}</span>
                 <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #7dd3fc', margin: '4px 0' }} />
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#7dd3fc' }}>TOTAL</span>
                 <span style={{ fontSize: 18, fontWeight: 700, color: '#7dd3fc', textAlign: 'right' }}>{fmt(c.grand)}</span>
@@ -530,105 +591,140 @@ export default function App() {
   const renderInventaire = () => (
     <div>
       <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>
-        Cliquez sur un nom pour le modifier. Utilisez <strong style={{ color: '#34d399' }}>Transférer</strong> pour déplacer un item entre emplacements.
+        Cliquez sur un nom pour le modifier. Maintenez <strong style={{ color: '#aaa' }}>⠿</strong> pour réordonner dans un groupe.
       </p>
 
-      {invGroups.map(g => (
-        <div key={g.id} style={s.card}>
-          {/* Group header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #333' }}>
-            {editingGroup === g.id ? (
-              <input autoFocus style={{ ...s.inputSm, width: 220, textAlign: 'left', fontSize: 15, fontWeight: 600, padding: '4px 8px' }}
-                value={g.name} onChange={e => renameGroup(g.id, e.target.value)}
-                onBlur={() => setEditingGroup(null)} onKeyDown={e => e.key === 'Enter' && setEditingGroup(null)} />
-            ) : (
-              <span style={{ fontSize: 15, fontWeight: 600, color: '#34d399', cursor: 'text' }} onClick={() => setEditingGroup(g.id)}>{g.name}</span>
-            )}
-            <button onClick={() => removeGroup(g.id)} style={s.del} title="Supprimer ce groupe">🗑</button>
-          </div>
+      {invGroups.map(g => {
+        const collapsed = !!collapsedGroups[g.id];
+        return (
+          <div key={g.id} style={s.card}>
+            {/* Group header */}
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: collapsed ? 0 : 8, paddingBottom: collapsed ? 0 : 8, borderBottom: collapsed ? 'none' : '1px solid #333' }}>
+              <button style={s.chevron(collapsed)} onClick={() => toggleCollapseGroup(g.id)} title={collapsed ? 'Déplier' : 'Replier'}>▼</button>
+              {editingGroup === g.id ? (
+                <input autoFocus style={{ ...s.inputSm, flex: 1, textAlign: 'left', fontSize: 15, fontWeight: 600, padding: '4px 8px' }}
+                  value={g.name} onChange={e => renameGroup(g.id, e.target.value)}
+                  onBlur={() => setEditingGroup(null)} onKeyDown={e => e.key === 'Enter' && setEditingGroup(null)} />
+              ) : (
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#34d399', cursor: 'text', flex: 1 }} onClick={() => setEditingGroup(g.id)}>{g.name}</span>
+              )}
+              <button
+                style={s.del}
+                title="Supprimer ce groupe"
+                onClick={() => { if (window.confirm(`Supprimer le groupe "${g.name}" et tous ses items ?`)) removeGroup(g.id); }}
+              >🗑</button>
+            </div>
 
-          {g.items.length === 0 && (
-            <div style={{ color: '#555', fontSize: 13, paddingLeft: 12, paddingBottom: 8 }}>Aucun item.</div>
-          )}
-
-          {g.items.map(item => {
-            const isTransferring = transfer?.groupId === g.id && transfer?.itemId === item.id;
-            return (
-              <div key={item.id}>
-                {/* Item row */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0 6px 12px', borderBottom: '1px solid #1a1a2a' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {editingItem === item.id ? (
-                      <input autoFocus style={{ ...s.inputSm, width: 160, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
-                        value={item.name} onChange={e => renameItem(g.id, item.id, e.target.value)}
-                        onBlur={() => setEditingItem(null)} onKeyDown={e => e.key === 'Enter' && setEditingItem(null)} />
-                    ) : (
-                      <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingItem(item.id)}>{item.name}</span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                    <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, -1)}>−</button>
-                    <input type="number" min="0" value={item.quantity}
-                      onChange={e => setInvQty(g.id, item.id, parseInt(e.target.value) || 0)}
-                      style={{ ...s.inputSm, width: 52, textAlign: 'center' }} />
-                    <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, 1)}>+</button>
-                    <button
-                      style={s.btnSm(isTransferring ? '#f87171' : '#34d399')}
-                      onClick={() => isTransferring ? setTransfer(null) : setTransfer({ groupId: g.id, itemId: item.id, toGroupId: null, qty: 1 })}
-                    >{isTransferring ? '✕' : '⇄'}</button>
-                    <button onClick={() => removeItem(g.id, item.id)} style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}>✕</button>
-                  </div>
-                </div>
-
-                {/* Transfer panel */}
-                {isTransferring && (
-                  <div style={{ background: '#16213a', border: '1px solid #34d39944', borderRadius: 8, margin: '4px 0 4px 12px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: 12, color: '#34d399', marginBottom: 8, fontWeight: 600 }}>
-                      Transférer « {item.name} »
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <span style={{ fontSize: 11, color: '#888' }}>Vers</span>
-                        <select
-                          value={transfer.toGroupId || ''}
-                          onChange={e => setTransfer(prev => ({ ...prev, toGroupId: parseInt(e.target.value) || null }))}
-                          style={{ ...s.inputSm, width: 'auto', minWidth: 130, textAlign: 'left', cursor: 'pointer' }}
-                        >
-                          <option value="">-- Choisir --</option>
-                          {invGroups.filter(og => og.id !== g.id).map(og => (
-                            <option key={og.id} value={og.id}>{og.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        <span style={{ fontSize: 11, color: '#888' }}>Quantité (max {item.quantity})</span>
-                        <input type="number" min="1" max={item.quantity}
-                          value={transfer.qty}
-                          onChange={e => setTransfer(prev => ({ ...prev, qty: parseInt(e.target.value) || 1 }))}
-                          style={{ ...s.inputSm, width: 70, textAlign: 'center' }} />
-                      </div>
-                      <button
-                        style={{ ...s.btnFill('#34d399'), alignSelf: 'flex-end', opacity: transfer.toGroupId ? 1 : 0.4 }}
-                        onClick={doTransfer}
-                        disabled={!transfer.toGroupId}
-                      >Confirmer</button>
-                    </div>
-                  </div>
+            {!collapsed && (
+              <>
+                {g.items.length === 0 && (
+                  <div style={{ color: '#555', fontSize: 13, paddingLeft: 12, paddingBottom: 8 }}>Aucun item.</div>
                 )}
-              </div>
-            );
-          })}
 
-          {/* Add item */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingLeft: 12 }}>
-            <input style={{ ...s.input, fontSize: 13, padding: '6px 10px' }} placeholder="Nouvel item..."
-              value={newItemNames[g.id] || ''}
-              onChange={e => setNewItemNames(prev => ({ ...prev, [g.id]: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && addItem(g.id)} />
-            <button style={s.btnFill('#34d399')} onClick={() => addItem(g.id)}>+ Item</button>
+                {g.items.map((item, idx) => {
+                  const isTransferring = transfer?.groupId === g.id && transfer?.itemId === item.id;
+                  return (
+                    <div key={item.id}
+                      draggable
+                      onDragStart={() => handleInvDragStart(g.id, idx)}
+                      onDragEnter={() => handleInvDragEnter(g.id, idx)}
+                      onDragEnd={handleInvDragEnd}
+                      onDragOver={e => e.preventDefault()}
+                    >
+                      {/* Item row */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0 7px 4px', borderBottom: '1px solid #1a1a2a' }}>
+                        <span style={s.grip}>⠿</span>
+                        <div style={{ flex: 1, minWidth: 0, marginLeft: 4 }}>
+                          {editingItem === item.id ? (
+                            <input autoFocus style={{ ...s.inputSm, width: 160, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
+                              value={item.name} onChange={e => renameItem(g.id, item.id, e.target.value)}
+                              onBlur={() => setEditingItem(null)} onKeyDown={e => e.key === 'Enter' && setEditingItem(null)} />
+                          ) : (
+                            <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingItem(item.id)}>{item.name}</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                          <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, -1)}>−</button>
+                          <input type="number" min="0" value={item.quantity}
+                            onFocus={sel}
+                            onChange={e => setInvQty(g.id, item.id, parseInt(e.target.value))}
+                            style={{ ...s.inputSm, width: 52, textAlign: 'center' }} />
+                          <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, 1)}>+</button>
+                          {/* Transfer button — large touch target */}
+                          <button
+                            style={{
+                              background: isTransferring ? '#f8717122' : '#34d39922',
+                              border: `1px solid ${isTransferring ? '#f87171' : '#34d399'}`,
+                              color: isTransferring ? '#f87171' : '#34d399',
+                              borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                              fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3,
+                            }}
+                            onClick={() => isTransferring
+                              ? setTransfer(null)
+                              : setTransfer({ groupId: g.id, itemId: item.id, toGroupId: null, qty: '' })
+                            }
+                          >{isTransferring ? '✕ Annuler' : '⇄ Transférer'}</button>
+                          <button
+                            style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}
+                            onClick={() => { if (window.confirm(`Supprimer "${item.name}" ?`)) removeItem(g.id, item.id); }}
+                          >✕</button>
+                        </div>
+                      </div>
+
+                      {/* Transfer panel */}
+                      {isTransferring && (
+                        <div style={{ background: '#16213a', border: '1px solid #34d39944', borderRadius: 8, margin: '4px 0 4px 8px', padding: '12px 14px' }}>
+                          <div style={{ fontSize: 12, color: '#34d399', marginBottom: 10, fontWeight: 600 }}>
+                            Transférer « {item.name} »
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: '#888' }}>Vers</span>
+                              <select
+                                value={transfer.toGroupId || ''}
+                                onChange={e => setTransfer(prev => ({ ...prev, toGroupId: parseInt(e.target.value) || null }))}
+                                style={{ ...s.inputSm, width: 'auto', minWidth: 150, textAlign: 'left', cursor: 'pointer', padding: '8px 10px' }}
+                              >
+                                <option value="">-- Choisir --</option>
+                                {invGroups.filter(og => og.id !== g.id).map(og => (
+                                  <option key={og.id} value={og.id}>{og.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={{ fontSize: 11, color: '#888' }}>Quantité (max {item.quantity})</span>
+                              <input type="number" min="1" max={item.quantity}
+                                value={transfer.qty}
+                                onFocus={sel}
+                                onChange={e => setTransfer(prev => ({ ...prev, qty: e.target.value }))}
+                                placeholder="1"
+                                style={{ ...s.inputSm, width: 70, textAlign: 'center', padding: '8px 8px' }} />
+                            </div>
+                            <button
+                              style={{ ...s.btnFill('#34d399'), padding: '10px 20px', fontSize: 14, opacity: transfer.toGroupId ? 1 : 0.4 }}
+                              onClick={doTransfer}
+                              disabled={!transfer.toGroupId}
+                            >Confirmer</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Add item */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, paddingLeft: 4 }}>
+                  <input style={{ ...s.input, fontSize: 13, padding: '6px 10px' }} placeholder="Nouvel item..."
+                    value={newItemNames[g.id] || ''}
+                    onChange={e => setNewItemNames(prev => ({ ...prev, [g.id]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && addItem(g.id)} />
+                  <button style={s.btnFill('#34d399')} onClick={() => addItem(g.id)}>+ Item</button>
+                </div>
+              </>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Add group */}
       <div style={{ ...s.card, display: 'flex', gap: 8 }}>
@@ -654,7 +750,9 @@ export default function App() {
         select { appearance: none; }
       `}</style>
       <div style={s.header}>
-        <h1 style={s.title}>Soumission — Nettoyage de vitres</h1>
+        <div style={s.logoRow}>
+          <img src="/logo.png" alt="BL Vitres" style={{ height: 48, objectFit: 'contain' }} />
+        </div>
         <div style={s.tabs}>
           {tabLabels.map((l, i) => (
             <button key={i} style={s.tab(tab === i)} onClick={() => setTab(i)}>{l}</button>
