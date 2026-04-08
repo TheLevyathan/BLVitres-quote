@@ -631,32 +631,39 @@ export default function App() {
                       onDragEnd={handleInvDragEnd}
                       onDragOver={e => e.preventDefault()}
                     >
-                      {/* Item row */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0 7px 4px', borderBottom: '1px solid #1a1a2a' }}>
-                        <span style={s.grip}>⠿</span>
-                        <div style={{ flex: 1, minWidth: 0, marginLeft: 4 }}>
-                          {editingItem === item.id ? (
-                            <input autoFocus style={{ ...s.inputSm, width: 160, textAlign: 'left', fontSize: 14, padding: '3px 8px' }}
-                              value={item.name} onChange={e => renameItem(g.id, item.id, e.target.value)}
-                              onBlur={() => setEditingItem(null)} onKeyDown={e => e.key === 'Enter' && setEditingItem(null)} />
-                          ) : (
-                            <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingItem(item.id)}>{item.name}</span>
-                          )}
+                      {/* Item row — 2 lines */}
+                      <div style={{ padding: '8px 0 8px 4px', borderBottom: '1px solid #1a1a2a' }}>
+                        {/* Line 1 : grip + name + delete */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+                          <span style={s.grip}>⠿</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {editingItem === item.id ? (
+                              <input autoFocus style={{ ...s.inputSm, width: '100%', textAlign: 'left', fontSize: 14, padding: '3px 8px', boxSizing: 'border-box' }}
+                                value={item.name} onChange={e => renameItem(g.id, item.id, e.target.value)}
+                                onBlur={() => setEditingItem(null)} onKeyDown={e => e.key === 'Enter' && setEditingItem(null)} />
+                            ) : (
+                              <span style={{ fontSize: 14, color: '#ccc', cursor: 'text' }} onClick={() => setEditingItem(item.id)}>{item.name}</span>
+                            )}
+                          </div>
+                          <button
+                            style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}
+                            onClick={() => { if (window.confirm(`Supprimer "${item.name}" ?`)) removeItem(g.id, item.id); }}
+                          >✕</button>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                        {/* Line 2 : qty controls + transfer */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 30 }}>
                           <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, -1)}>−</button>
                           <input type="number" min="0" value={item.quantity}
                             onFocus={sel}
                             onChange={e => setInvQty(g.id, item.id, parseInt(e.target.value))}
                             style={{ ...s.inputSm, width: 52, textAlign: 'center' }} />
                           <button style={s.btn()} onClick={() => updateInvQty(g.id, item.id, 1)}>+</button>
-                          {/* Transfer button — large touch target */}
                           <button
                             style={{
                               background: isTransferring ? '#f8717122' : '#34d39922',
                               border: `1px solid ${isTransferring ? '#f87171' : '#34d399'}`,
                               color: isTransferring ? '#f87171' : '#34d399',
-                              borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+                              borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
                               fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', lineHeight: 1.3,
                             }}
                             onClick={() => isTransferring
@@ -664,10 +671,6 @@ export default function App() {
                               : setTransfer({ groupId: g.id, itemId: item.id, toGroupId: null, qty: '' })
                             }
                           >{isTransferring ? '✕ Annuler' : '⇄ Transférer'}</button>
-                          <button
-                            style={{ ...s.del, fontSize: 14, padding: '2px 4px' }}
-                            onClick={() => { if (window.confirm(`Supprimer "${item.name}" ?`)) removeItem(g.id, item.id); }}
-                          >✕</button>
                         </div>
                       </div>
 
