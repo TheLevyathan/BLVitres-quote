@@ -588,11 +588,29 @@ export default function App() {
   // ════════════════════════════════════════════════════════════════════════════
   // TAB 4 — INVENTAIRE
   // ════════════════════════════════════════════════════════════════════════════
+  const exportInventory = () => {
+    const data = localStorage.getItem(INV_STORAGE_KEY);
+    if (!data) return alert('Aucune donnée à exporter.');
+    const blob = new Blob([data], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'inventaire-blvitres.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const renderInventaire = () => (
     <div>
-      <p style={{ color: '#888', fontSize: 13, margin: '0 0 16px' }}>
-        Cliquez sur un nom pour le modifier. Maintenez <strong style={{ color: '#aaa' }}>⠿</strong> pour réordonner dans un groupe.
-      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <p style={{ color: '#888', fontSize: 13, margin: 0 }}>
+          Cliquez sur un nom pour le modifier. Maintenez <strong style={{ color: '#aaa' }}>⠿</strong> pour réordonner dans un groupe.
+        </p>
+        <button
+          style={{ background: 'none', border: '1px solid #34d399', color: '#34d399', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
+          onClick={exportInventory}
+        >⬇ Exporter JSON</button>
+      </div>
 
       {invGroups.map(g => {
         const collapsed = !!collapsedGroups[g.id];
